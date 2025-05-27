@@ -1,0 +1,224 @@
+---
+title: "LMNA GWAS"
+author: "Sébastien Renaut (sebastien.renaut@criucpq.ulaval.ca)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_sections: F
+params:
+  datapath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/data'
+  codepath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/R'
+  resultspath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/results'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = params$datapath)
+knitr::opts_chunk$set(echo = F)
+setwd(params$datapath)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(RColorBrewer)
+library(qqman)
+library(ggrepel)
+```
+
+
+```{r split a vcf into the referwence and mutated alleles,eval = Ts}
+#
+chr = read.table(file.path(params$datapath,'LMNA_148_samples/chr_phased.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+colnames(chr)[10:ncol(chr)] = sapply(strsplit(sapply(strsplit(colnames(chr)[10:ncol(chr)],'#'),'[',2),'_'),'[',1) #simplify column names
+
+#keep only the patients that are het. for the LMNA mutation.
+temp = chr[chr$ID == 'rs267607581',]
+chr = chr[,temp!= '0|0']
+
+
+#clinical data
+clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+colnames(clinical)[2] = 'id'
+colnames(clinical)[colnames(clinical) == 'Severe.cardiac.phenotype..defined.as..ESHF..cardiac.mortality..ventricular.arrhythmia..severe.CMP.'] = 'severity'
+
+
+#clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_2025-04-04_0935.csv'),header = T)
+family = read.csv(file.path(params$datapath,'clinical/familles.csv'),header = T,sep = '\t') 
+
+
+#merge clinical + family
+clinical_family = merge(clinical,family,by = 'id',all=T)
+clinical_family$id = as.character(clinical_family$id)
+
+
+#remove the ones I don't have genotypes for
+clinical_family = clinical_family[clinical_family$id %in% colnames(chr)[10:ncol(chr)],]
+
+
+#create ad data.frame that will contain info on patients.
+colnames_family = merge(data.frame(id = colnames(chr)[10:ncol(chr)]),clinical_family[,colnames(clinical_family) %in% c('family_number','family','id','severity','sex')],by = 'id',all= T)
+colnames_family$family[is.na(colnames_family$family)] = 'Unknown'
+colnames_family$family[colnames_family$family == 'None'] = 'Unknown'
+colnames_family$family_anonyme = colnames_family$family
+colnames_family$severity_recoded = colnames_family$severity
+colnames_family$severity_recoded[colnames_family$severity=="Yes"] = 2
+colnames_family$severity_recoded[colnames_family$severity=="No"] = 1
+colnames_family$sex_recoded = colnames_family$sex
+colnames_family$sex_recoded[colnames_family$sex == 'Female'] = 1
+colnames_family$sex_recoded[colnames_family$sex == 'Male'] = 2
+
+colnames(colnames_family)[1] = '#IID' 
+
+
+
+#save for plink2 --glm
+write.table(colnames_family[,c(1,6,7)],file.path(params$datapath,'clinical/severe.tsv'),quote= F, sep = '\t',row.names = F)
+
+colnames(colnames_family)[1] = 'id' 
+```
+
+
+
+
+# association info 
+```{r association, message= T}
+# Load phenotype data
+colnames_family = colnames_family[order(colnames_family$id),]
+severity = as.factor(colnames_family$severity)
+family = as.factor(colnames_family$family)
+
+
+#Genotype data
+geno = chr[,10:61]
+geno = geno[,order(colnames(geno))]
+
+
+#
+results = data.frame(matrix(0,nrow = nrow(chr),ncol =4))
+colnames(results) = c('SNP','pvalue','chr','pos')
+results$SNP = chr$ID
+results$chr = chr$`#CHROM`
+results$pos = chr$POS
+
+
+#SNPs re-coded as 0/1/2
+for (i in 1:nrow(results)) {  
+  snp = geno[i,]
+  snp = gsub('1|0','1',snp,fixed = T)  
+  snp = gsub('0|1','1',snp,fixed = T)  
+  snp = gsub('0|0','0',snp,fixed = T)  
+  snp = gsub('1|1','2',snp,fixed = T)  
+  snp = as.numeric(snp)
+  
+  model = suppressWarnings(glm(severity ~ snp, family = binomial))
+  
+  if(nrow(summary(model)$coefficients)>1) {results$pvalue[i] = summary(model)$coefficients[2, 4]} else 
+    results$pvalue[i] = 1
+  
+  if(i %% 10000 == 0) print(paste0('Done ',i, ' of ',nrow(results),', Time is: ',Sys.time()))
+}
+
+#filter results and pvalue adjust.
+results = results[results$pvalue<0.9999,]
+results$adjusted_p <- p.adjust(results$pvalue, method = "fdr")
+results_subset = results[results$pvalue<0.1,]
+```
+
+
+# Double check the glm versus plink2 results
+  * R glm and plink glm are the same, except if you apply the (default) Firth's bias reduction method for glm that don't converge (~ 1 % of samples)
+  
+```{r association, message= T}
+# load plink2 results
+
+results_gwas_plink = read.csv(file.path(params$datapath,'LMNA_52_phased/gwas_results.severity_recoded.glm.logistic.hybrid'),sep = '\t', comment.char = '', header = T)
+results_gwas_plink = results_plink[!is.na(results_plink$P), ]
+colnames(results_gwas_plink)[c(3,16,1,2)] = colnames(results)[1:4]
+results_plink = results_gwas_plink[results_gwas_plink$TEST == 'ADD', ]
+results_subset_plink = results_plink[results_plink$pvalue < 0.1, ]
+ 
+#results_merged = merge(results,results_plink, by.x = 'SNP', by.y = 'ID')
+
+```
+
+# Plot
+```{r association plot, message= T}
+col = c(brewer.pal(8,'Set2'),brewer.pal(9,'Set1'),brewer.pal(9,'Set3'))
+col = col[c(1,9,2,11,3,10,4,12,5,13,6,14,7,15,8,16,17:27)]
+
+###prepare data for ggplot
+results_subset_forggplot <- results_subset_plink %>% 
+
+  # Compute chromosome size
+  group_by(chr) %>% 
+  summarise(chr_len=max(pos)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot=cumsum(as.numeric(chr_len))-as.numeric(chr_len)) %>%
+  select(-chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(results_subset_plink, ., by=c("chr"="chr")) %>%
+  
+  # Add a cumulative position of each SNP
+  arrange(chr, pos) %>%
+  mutate( BPcum=pos+tot)
+
+
+###prepare axis labels.
+axisdf = results_subset_forggplot %>%
+  group_by(chr) %>%
+  summarize(center=( max(BPcum) + min(BPcum) ) / 2 )
+
+  
+###prepare significant SNPs
+signif = results_subset_forggplot[results_subset_forggplot$pvalue < 0.002,]
+#signif$genes = 'names'
+#signif$genes = c('MYLK4','HLA intergenic','')
+print(signif)
+
+#                  SNP       pvalue chr      pos adjusted_p        tot      BPcum          genes
+#15328 GSA-rs115822788 0.0001242059   6  2698238   0.540558 1061052130 1063750368          MYLK4
+#16090       rs9260918 0.0001242059   6 29948751   0.540558 1061052130 1091000881 HLA intergenic
+#16092       rs1051133 0.0001242059   6 30037908   0.540558 1061052130 1091090038      
+#
+  
+###Make the ggplot:
+manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pvalue))) +
+    
+    #Show all points
+    geom_point( aes(color=as.factor(chr)), alpha=0.9, size=1.3) +
+    scale_color_manual(values = col) +
+    
+    #Custom X axis:
+    scale_x_continuous(label = axisdf$chr, breaks = axisdf$center, expand = c(0.01,0.01)) +
+    scale_y_continuous(breaks = c(1,2,3), labels = c(0.1,0.01,0.001), limits = c(1,3.2), expand = c(0.01,0.01))  + #remove space between plot area and x axis
+    xlab('Chromosomes') + 
+    ylab(bquote(italic(p)~'- value')) +
+  
+    #Labels
+   # geom_label_repel(data = signif, aes(label = genes, x = BPcum, y = -log10(pvalue)), col = col[6],  size = 2) +
+  
+    #Custom the theme:
+    theme_bw() +
+    
+    theme( 
+      legend.position="none",
+      panel.border = element_blank(),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank()) +
+  
+    ggtitle('Manhattan plot: SNP genotypes vs. severity phenotype (glm for severity with Sex, PC1, PC2 as covariates)')
+
+#save plot
+pdf(file.path(params$resultspath,paste0('May2025/Figure9_Manhattan_version2.pdf')),width = 10,height = 5)
+manhattan_plot
+dev.off()
+```
+
+
+
+# session info 
+```{r session test, message= T}
+sessionInfo()
+```

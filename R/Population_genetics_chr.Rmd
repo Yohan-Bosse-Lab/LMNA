@@ -1,0 +1,384 @@
+---
+title: "LMNA population genetics"
+author: "Sébastien Renaut (sebastien.renaut@criucpq.ulaval.ca)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_sections: F
+params:
+  datapath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/data'
+  codepath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/R'
+  resultspath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/results'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = params$datapath)
+knitr::opts_chunk$set(echo = F)
+setwd(params$datapath)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(RColorBrewer)
+library(vcfR)
+library(adegenet)
+library(poppr)
+library(ComplexHeatmap)
+
+```
+
+
+```{r split a vcf into the referwence and mutated alleles,eval = F}
+#
+chr1 = read.table(file.path(params$datapath,'LMNA_148_samples/chr1_phased.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+colnames(chr1)[10:ncol(chr1)] = sapply(strsplit(sapply(strsplit(colnames(chr1)[10:ncol(chr1)],'#'),'[',2),'_'),'[',1) #simplify column names
+
+system('wsl.exe head -8 LMNA_148_samples/chr1_phased.vcf >header')
+
+
+#keep only het SNPs for the mutated rs267607581 allele.
+temp = chr1[chr1 $ID == 'rs267607581',]
+chr1 = chr1[,temp!= '0|0']
+temp = chr1[chr1 $ID == 'rs267607581',]
+#chr1= chr1[1:200,]
+chr1_h1 = chr1
+chr1_h2 = chr1
+chr1_hM = chr1
+chr1_hR = chr1
+print(dim(chr1))
+
+#generate 2 haplotypes (the reference and the mutated allele ones).
+for(i in 1:nrow(chr1)){
+  chr1_hM[i,10:61] = c(sapply(substring(chr1[i,10:61],1,1),"[",1)) #keep the 1st phased genotype, treat it as haploid
+  chr1_hR[i,10:61] = c(sapply(substring(chr1[i,10:61],3,3),"[",1)) #keep the 2nd phased genotype, treat it as haploid
+  chr1_h2[i,10:61] = paste0(c(sapply(substring(chr1[i,10:61],1,1),"[",1)),'|',c(sapply(substring(chr1[i,10:61],1,1),"[",1)))#keep the 1st phased genotype, treat it as diploid
+  chr1_h1[i,10:61] = paste0(c(sapply(substring(chr1[i,10:61],3,3),"[",1)),'|',c(sapply(substring(chr1[i,10:61],3,3),"[",1)))#keep the 2nd phased genotype , treat it as diploid
+  
+  if(i %% 5000 == 0) print(paste0('Done ',i,' of ',nrow(chr1),', The time is: ', Sys.time()))
+}
+
+
+#a file with the chromosome containing the mutation
+temp_allele = chr1_hM[,temp == '0|1']
+chr1_hM[,temp == '0|1'] = chr1_hR[,temp == '0|1']
+chr1_hR[,temp == '0|1'] = temp_allele
+
+temp_allele = chr1_h2[,temp == '0|1']
+chr1_h2[,temp == '0|1'] = chr1_h1[,temp == '0|1']
+chr1_h1[,temp == '0|1'] = temp_allele
+
+
+#write to disk (only variable sites)
+write.table(chr1_h1,file.path(params$datapath,'temp_h1.vcf'),row.names = F,quote = F, sep = "\t") 
+write.table(chr1_h2,file.path(params$datapath,'temp_h2.vcf'),row.names = F,quote = F, sep = "\t")
+write.table(chr1,file.path(params$datapath,'temp_h12.vcf'),row.names = F,quote = F, sep = "\t")
+
+write.table(chr1_hM,file.path(params$datapath,'temp_hM.vcf'),row.names = F,quote = F, sep = "\t")
+write.table(chr1_hR,file.path(params$datapath,'temp_hR.vcf'),row.names = F,quote = F, sep = "\t")
+
+#
+system('wsl.exe cat header temp_h12.vcf >LMNA_52_phased/chr1_h12.vcf') #for vcftools
+system('wsl.exe cat header temp_h1.vcf >LMNA_52_phased/chr1_h1.vcf') #for vcftools
+system('wsl.exe cat header temp_h2.vcf >LMNA_52_phased/chr1_h2.vcf') #for vcftools
+system('wsl.exe cat header temp_hM.vcf >LMNA_52_phased/chr1_mutated.vcf') #single haplotype MUT
+system('wsl.exe cat header temp_hR.vcf >LMNA_52_phased/chr1_reference.vcf') #single haplotype REF
+system('wsl.exe rm temp*')
+system('wsl.exe rm header')
+#
+```
+
+```{r vcftools sitepi,eval = F}
+#####NUCLEOTIDE DIVERSITY per haplotype, per site
+system('wsl.exe vcftools --vcf LMNA_52_phased/chr1_h12.vcf --site-pi --out LMNA_52_phased/chr1_h12')
+system('wsl.exe vcftools --vcf LMNA_52_phased/chr1_h1.vcf --site-pi --out LMNA_52_phased/chr1_h1')
+system('wsl.exe vcftools --vcf LMNA_52_phased/chr1_h2.vcf --site-pi --out LMNA_52_phased/chr1_h2')
+```
+
+```{r sitepi PLOTS}
+chr1_h1.sites.pi = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h1.sites.pi'),   header = T)
+chr1_h2.sites.pi = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h2.sites.pi'),   header = T)
+chr1_h12.sites.pi = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h12.sites.pi'), header = T)
+
+#annotation / prepare the data
+annotation = data.frame(x=c(156107442/1000000,156078176/1000000),y=c(0.4,-0.05),label = c('rs267607581','LMNA'))
+LMNA = data.frame(x1=156083176/1000000,x2=156109999/1000000,y1=-0.05,y2=-0.05)
+
+chr1_h1.sites.pi$haplotype = 'phased Chromosome 1\n(haplotype 1, reference LMNA allele)'
+chr1_h2.sites.pi$haplotype = 'phased Chromosome 1\n(haplotype 2, mutated LMNA allele)'
+chr1_h12.sites.pi$haplotype = 'Chromosome 1\n(Diploid genome)'
+chr1_h12.sites.pi$haplotype = factor(chr1_h12.sites.pi$haplotype, levels = c( 'Chromosome 1\n(Diploid genome)','phased Chromosome 1\n(haplotype 1, reference LMNA allele)','phased Chromosome 1\n(haplotype 2, mutated LMNA allele)'))
+chr1_sites.pi = rbind(chr1_h1.sites.pi,chr1_h2.sites.pi,chr1_h12.sites.pi)
+
+
+#plots
+gplot_medium_scale = chr1_sites.pi %>% filter(POS >(156107442-100000)) %>% filter(POS <(156107442+100000)) %>% ggplot(aes(x=POS/1000000,y=PI)) +
+  geom_point(alpha = 1,col = 'darkblue') + 
+  geom_smooth(n =10,col = 'black',method = "loess") + 
+  geom_vline(xintercept = 156107442/1000000,color = 'orange',linetype="dashed",linewidth = 1) + 
+  geom_segment(data = LMNA,aes(x = x1, y = y1, xend = x2, yend = y2), col = "orange",linewidth = 4) +
+  geom_label(data=annotation, aes(x=x-5000/1000000, y=y, label=label),color="orange",size=3,fontface="bold" ) +
+  facet_grid(haplotype~.) +
+  ylim(c(-0.1,0.51)) +
+  theme_bw() +
+  ylab('Nucleotide diversity') +
+  xlab('Chromosome 1 position (Mb)') +
+  ggtitle('Nucleotide diversity (200kb window)')
+  
+gplot_large_scale = chr1_sites.pi %>% filter(POS >(156107442-20000000)) %>% filter(POS <(156107442+5000000)) %>% ggplot(aes(x=POS/1000000,y=,PI)) +
+  geom_point(alpha = 1,col = 'darkblue') + 
+  geom_smooth(n =10,col = 'black',method = "loess") + 
+  facet_grid(haplotype~.) +
+  ylim(c(-0.1,0.51)) + 
+  geom_vline(xintercept = 156107442/1000000,color = 'orange',linetype="dashed",linewidth = 1) + 
+  geom_segment(data = LMNA,aes(x = x1, y = y1, xend = x2, yend = y2), col = "orange",linewidth = 4) +
+  geom_label(data=annotation[2,], aes(x=x-0.8, y=y, label=label),color="orange",size=3,fontface="bold" ) +
+  ylab('Nucleotide diversity') +
+  xlab('Chromosome 1 position (Mb)') +
+  theme_bw() +
+  ggtitle('Nucleotide diversity (25MB window)')
+
+pdf(file.path(params$resultspath,'May2025/Figure5_nucleotide_diversity.pdf'),width = 14,height = 8)
+gplot_medium_scale | gplot_large_scale
+dev.off()
+```
+
+
+```{r clinical & family  data}
+chr1_mutated = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_mutated.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1_wildtype = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_reference.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1_h12 = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h12.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1 = list(chr1_wildtype,chr1_mutated,chr1_h12)
+
+#clinical data
+clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+colnames(clinical)[2] = 'id'
+colnames(clinical)[colnames(clinical) == 'Severe.cardiac.phenotype..defined.as..ESHF..cardiac.mortality..ventricular.arrhythmia..severe.CMP.'] = 'severity'
+
+#clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_2025-04-04_0935.csv'),header = T)
+family = read.csv(file.path(params$datapath,'clinical/familles.csv'),header = T,sep = '\t') 
+
+#merge clinical + family
+clinical_family = merge(clinical,family,by = 'id',all=T)
+clinical_family$id = as.character(clinical_family$id)
+
+#remove the ones I don't have genotypes for
+clinical_family = clinical_family[clinical_family$id %in% colnames(chr1[[1]])[10:61],]
+
+#create ad data.frame that will contain info on patients.
+colnames_family = merge(data.frame(id = colnames(chr1[[1]])[10:61]),clinical_family[,colnames(clinical_family) %in% c('family_number','family','id','severity')],by = 'id',all= T)
+colnames_family$family[is.na(colnames_family$family)] = 'Unknown'
+colnames_family$family[colnames_family$family == 'None'] = 'Unknown'
+colnames_family$family_anonyme = colnames_family$family
+
+for(n in 1:nrow(colnames_family)){
+  temp = strsplit(colnames_family$family_anonyme[n],' ')[[1]]
+  if((length(temp) == 2) & (temp[1] != 'Unknown')) colnames_family$family_anonyme[n] = paste0(substr(temp[1],1,1),' ',temp[[2]])
+  if((length(temp) == 1) & (temp[1] != 'Unknown')) colnames_family$family_anonyme[n] = substr(temp[1],1,1)
+}
+
+#
+colnames_family = colnames_family[order(colnames_family$family_anonyme),]
+write.table(colnames_family,file.path(params$datapath,'clinical/severe.txt'),row.names = F, quote = T,sep = '\t')
+
+#re-order genotyping data
+for(m in 1:3){
+ #increasing order of id
+ chr1[[m]][,10:61] = chr1[[m]][,order(colnames(chr1[[m]])[10:61])+9]
+ colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[order(colnames(chr1[[m]])[10:61])+9]
+                                                  
+ #same order as colnames_family                                                
+ chr1[[m]][,10:61] = chr1[[m]][,as.numeric(rownames(colnames_family))+9]
+ colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[as.numeric(rownames(colnames_family))+9]                                                
+}
+
+
+```
+
+
+```{r plotvcf, eval  = F}
+colnames(colnames_family)[1] = 'sampleID'
+colnames_family[14,c(3,4)] = 'LR'
+colnames_family[27:28,c(3,4)] = 'PVG'
+colnames_family$family_anonyme = factor(colnames_family$family_anonyme,levels = unique(colnames_family$family_anonyme)[c(1:13,15,14)])
+
+#colnames_family[44:45,c(2,4)] = 'T'
+#colnames_family[46:52,2] = 'N/D'
+#colnames_family$family_number = factor(colnames_family$family_number,levels = unique(colnames_family$family_number))
+colnames_family$sampleID = factor(colnames_family$sampleID,levels = colnames_family$sampleID)
+
+
+galign = list()
+
+legend_colors = list(c('#FF7F00','#A6CEE3'),c('#FF7F00','#A6CEE3'),c('#33A02C','#6A3D9A','#A6CEE3'))
+
+for(i in 1:3){
+n_samples = 52
+  chr_medium = chr1[[i]][,1:(9+n_samples)] %>% filter(POS >(156107442-20000000)) %>% filter(POS <(156107442+5000000)) %>% as.data.frame() %>% tidyr::pivot_longer(cols = 10:(9+n_samples), names_to = 'sampleID')
+  chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:n_samples]) 
+  
+  #chr_medium = merge(chr_medium, colnames_family,by.x = 'sampleID',by.y = 'dossier')
+  chr_medium = inner_join(chr_medium, colnames_family,by = 'sampleID')
+  chr_medium$value = as.character(chr_medium$value)
+  #chr_medium$sampleID = sapply(strsplit(x = chr_medium$sample, split = '_'),'[',1)
+ #chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:52])
+ # chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:n_samples]) 
+  chr_medium$POS = chr_medium$POS/1000000
+  if(i < 3) {chr_medium$value[chr_medium$value == '1'] = 'mutated';chr_medium$value[chr_medium$value == '0'] = 'reference'}
+  if(i == 3) {chr_medium$value[chr_medium$value == '0|1'] = 'heterozygous';
+  chr_medium$value[chr_medium$value == '1|0'] = 'heterozygous';
+  chr_medium$value[chr_medium$value == '0|0'] = 'homozygous (reference)';
+  chr_medium$value[chr_medium$value == '1|1'] = 'homozygous (mutated)'}
+  chr_medium$size = 0.001
+  chr_medium$size[chr_medium$value == 'mutated'] = 0.005
+  
+galign[[i]] = 
+  ggplot(chr_medium,aes(x = POS,y = sampleID,col = value,fill = value)) +
+  geom_tile(size = 0.4) + 
+  geom_vline(xintercept = 156.107442,color = 'black',linewidth = 1) +
+  #facet_grid(rows = vars(sampleID)) +
+  facet_grid(family_anonyme ~ .,scales = "free", space = "free") +
+#  labs(y = NULL) + 
+ # guides(y = "none",col = 'none',size = 'none') +
+  scale_fill_discrete('Genotype',type = legend_colors[[i]]) +
+  scale_color_discrete('Genotype',type = legend_colors[[i]]) +
+  scale_y_discrete(limits=rev) +
+  scale_x_continuous(breaks=c(140,142.5,145,147.5,150,152.5,155,156.1,157.5,160)) +
+  xlab('Chromosome 1 position (Mb)') +
+  theme(panel.background = element_rect(fill = 'white'),strip.text.y.right = element_text(angle = 0,size = 8)) +
+ # theme(strip.text.y.left = element_text(angle = 0,size = 5),panel.spacing.y = unit(0.1, "lines")) +
+  ggtitle(c('phased chromosome 1 (haplotype 1, wiltype LMNA) ~ 25MB window','phased chromosome 1 (haplotype 2, mutated LMNA~rs267607581) ~ 25MB window','Diploid chromosome 1 ~ 25MB window')[i])
+
+}
+#
+pdf(file.path(params$resultspath,'May2025/Figure2_diploid_alignment.pdf'),width = 14,height = 8)
+galign[[3]]
+dev.off()
+
+pdf(file.path(params$resultspath,'May2025/Figure3_reference_alignment.pdf'),width = 14,height = 8)
+galign[[1]]
+dev.off()
+
+pdf(file.path(params$resultspath,'May2025/Figure4_mutated_alignment.pdf'),width = 14,height = 8)
+galign[[2]]
+dev.off()
+```
+
+
+```{r genetic distance}
+# Read VCF and change the sample names
+vcf <- read.vcfR(file.path(params$datapath,"LMNA_52_phased/chr1_h12.vcf"))
+
+#order things numerically with dossier ID 
+vcf@gt = vcf@gt[,c(1,order(as.numeric(colnames(vcf@gt)[-1]))+1)]
+
+#order things according to the colnames_family dataframe, then add pseudo-anonymised names.
+vcf@gt = vcf@gt[,c(1,as.numeric(rownames(colnames_family))+1)]
+colnames(vcf@gt)[-1] = paste0(colnames_family$family_anonyme,'_',colnames_family$dossier)
+
+genind <- vcfR2genind(vcf)
+
+# Compute genetic distance (e.g., Euclidean)
+d_mat <- as.matrix(nei.dist(genind))
+
+#plot
+plot_heatmap = Heatmap(d_mat,
+        name = "Distance",
+        clustering_distance_rows = "euclidean",
+        clustering_distance_columns = "euclidean",
+        clustering_method_rows = "complete",
+        clustering_method_columns = "complete",
+        show_row_dend = TRUE,
+        show_column_dend = TRUE,
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 8),
+        column_names_rot = 45,
+        column_title = "Genetic distance (Nei's) heatmap, Chromosome 1",
+        heatmap_legend_param = list(title = "Genetic Distance"))
+
+
+
+pdf(file.path(params$resultspath,'May2025/Figure1_heatmap.pdf'),width = 14,height = 8)
+plot_heatmap
+dev.off()
+
+```
+
+
+```{r chr phased}
+#run vcftools
+if(file.exists(file.path(params$datapath,'LMNA_52_phased/LD_rs267607581.list.hap.ld')) == F) {
+  system('wsl.exe vcftools --vcf LMNA_52_phased/chr1_h12.vcf --maf 0.1 --hap-r2-positions LMNA_52_phased/hap_r2_positions --out LMNA_52_phased/LD_rs267607581')
+  }
+
+#read LD data
+ld = read.table(file.path(params$datapath,'LMNA_52_phased/LD_rs267607581.list.hap.ld'),header = T)
+ld$POS2 = ld$POS2/1000000
+
+ld_plot = ggplot(ld,aes(x = POS2 ,y = R.2)) +
+  geom_point(col = "#1F78B4") + 
+  geom_vline(xintercept = 156107442/1000000,color = 'orange',linetype="dashed",linewidth = 0.5) +
+  geom_label(data=annotation[2,], aes(x=x-0.8, y=y, label=label),color="orange",size=3,fontface="bold" ) +
+  ylab(bquote('Linkage Disequilibrium '(R^2))) + 
+  xlab('Position (Mb)') +
+ # scale_color_manual(values = brewer.pal(9,'Paired')[rep(c(2:1),11)]) + 
+ # scale_x_continuous(breaks=c(0,500,1000,1500,2000,2500,3000)) + 
+  theme_classic() +
+  theme(legend.position="none") +
+  ggtitle('LD plot (Chromosome 1)')
+
+pdf(file.path(params$resultspath,'May2025/Figure6_ld_plot.pdf'),width = 6,height = 4)
+ld_plot
+dev.off()
+```
+
+
+```{r LDblocks}
+if(file.exists(file.path(params$datapath,'LMNA_52_phased/region_rs267607581.log')) == F) {
+  system("wsl.exe grep 'rs267607581' LMNA_52_phased/chr1_h12.vcf -B 750 -A 250 >LMNA_52_phased/tta")
+  system("wsl.exe head -9 LMNA_52_phased/chr1_h12.vcf >LMNA_52_phased/region_rs267607581.vcf")
+  system("wsl.exe cat LMNA_52_phased/tta >>LMNA_52_phased/region_rs267607581.vcf")
+  system("wsl.exe vcftools --vcf LMNA_52_phased/region_rs267607581.vcf --maf 0.2 --hap-r2 --out LMNA_52_phased/region_rs267607581")
+}
+
+region =  read.table(file.path(params$datapath,'LMNA_52_phased/region_rs267607581.hap.ld'), header = T)
+
+square_matrix = matrix(0, nrow = length(table(region$POS1)),ncol = length(table(region$POS1)))
+
+colnames(square_matrix) = names(table(region$POS1))
+rownames(square_matrix)  = colnames(square_matrix)                
+
+region$POS1 = as.character(region$POS1)
+region$POS2 = as.character(region$POS2)
+
+#pivot data
+region$z = abs(region$Dprime)
+region_pivoted = tidyr::pivot_wider(region[,c(2,3,8)], values_from = z,names_from = POS1)
+
+
+matrix = as.matrix(region_pivoted[,-1])
+#diag(matrix) = 1
+#matrix[upper.tri(matrix)] = matrix[lower.tri(matrix)]
+
+colnames(matrix) = rep(' ',ncol(matrix))
+rownames(matrix) = rep(' ',ncol(matrix))
+rownames(matrix)[11] = '119 MB'
+rownames(matrix)[474] = '158 MB'
+rownames(matrix)[81] = 'CENTROMERE\n(121-144 MB)'
+rownames(matrix)[337] = 'LMNA (156 MB)'
+
+
+pdf(file.path(params$resultspath,'May2025/Figure7_ld_heatmap.pdf'),width = 6,height = 4)
+
+Heatmap(matrix,cluster_rows = F,cluster_columns = F,row_names_gp = gpar(fontsize = 5),column_names_gp = gpar(fontsize = 5),name = "abs (D')", col = circlize::colorRamp2(c(0, 0.5, 1), c("darkblue", "white", "darkorange")),row_names_side = "left",column_title = "LD map (chromosome 1: 119-156 MB)",na_col = 'white')
+
+dev.off()
+```
+
+ 
+
+
+# session info 
+```{r session, message= T}
+sessionInfo()
+```

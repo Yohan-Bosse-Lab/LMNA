@@ -1,0 +1,223 @@
+---
+title: "LMNA ancestral blokcks _ Mutation Age"
+author: "Sébastien Renaut (sebastien.renaut@criucpq.ulaval.ca)"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    number_sections: F
+params:
+  datapath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/data'
+  codepath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/R'
+  resultspath: 'C:/Users/renseb01/Documents/Steinberg_Christian/LMNA/results'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = params$datapath)
+knitr::opts_chunk$set(echo = F)
+setwd(params$datapath)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(RColorBrewer)
+source(file.path(params$codepath,'mutation_Age_estimation.R'))
+```
+
+
+```{r clinical & family  data}
+chr1_mutated = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_mutated.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1_wildtype = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_reference.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1_h12 = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h12.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
+chr1 = list(chr1_wildtype,chr1_mutated,chr1_h12)
+
+#clinical data
+clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+colnames(clinical)[2] = 'id'
+colnames(clinical)[colnames(clinical) == 'Severe.cardiac.phenotype..defined.as..ESHF..cardiac.mortality..ventricular.arrhythmia..severe.CMP.'] = 'severity'
+
+family = read.csv(file.path(params$datapath,'clinical/familles.csv'),header = T,sep = '\t')
+
+#merge clinical + family
+clinical_family = merge(clinical,family, by = 'id',all=T)
+clinical_family$id = as.character(clinical_family$id)
+
+#remove the ones I don't have genotypes for
+clinical_family = clinical_family[clinical_family$id %in% colnames(chr1[[1]])[10:61],]
+
+#create ad data.frame that will contain info on patients.
+colnames_family = merge(data.frame(id = colnames(chr1[[1]])[10:61]),clinical_family[,colnames(clinical_family) %in% c('family_number','family','id','severity')],by = 'id',all= T)
+
+colnames_family$family[is.na(colnames_family$family)] = 'Unknown'
+colnames_family$family[colnames_family$family =='None'] = 'Unknown'
+
+#pseudo-anonymised families
+colnames_family$family_anonyme = colnames_family$family
+for(n in 1:nrow(colnames_family)){
+  temp = strsplit(colnames_family$family_anonyme[n],' ')[[1]]
+  if((length(temp) == 2) & (temp[1] != 'Unknown')) colnames_family$family_anonyme[n] = paste0(substr(temp[1],1,1),' ',temp[[2]])
+  if((length(temp) == 1) & (temp[1] != 'Unknown')) colnames_family$family_anonyme[n] = substr(temp[1],1,1)
+}
+
+colnames_family = colnames_family[order(colnames_family$family_anonyme),]
+
+#re-order genotyping data
+#for(m in 1:3){
+#  chr1[[m]][,10:61] = chr1[[m]][,order(colnames_family$family_anonyme)+9]
+#  colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[order(colnames_family$family_anonyme)+9]
+#}
+
+#re-order genotyping data
+for(m in 1:3){
+ #increasing order of id
+ chr1[[m]][,10:61] = chr1[[m]][,order(colnames(chr1[[m]])[10:61])+9]
+ colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[order(colnames(chr1[[m]])[10:61])+9]
+                                                  
+ #same order as colnames_family                                                
+ chr1[[m]][,10:61] = chr1[[m]][,as.numeric(rownames(colnames_family))+9]
+ colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[as.numeric(rownames(colnames_family))+9]                                                
+}
+```
+
+# find ancestral block 
+```{r ancestral, message= T}
+ancestral_plots = list()
+segments_to_plot_all = list()
+ages = list()
+#m=2
+for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
+    #to it for 'all' reference haplotypes (i.e. pretend we do not know which one is the true ancestral haplotype)
+    rs267607581_position = c(1:nrow(chr1[[m]]))[chr1[[m]]$POS==156107442]
+    ancestral_segments = chr1[[m]]
+    ancestral_segments$POS = ancestral_segments$POS/1000000
+  
+    #find the start and stop
+    for(i in 1:10000){
+      #define where to look for the haplotype
+      if(i == 1) {jjj = 1:52; jjj_start = 1:52;jjj_stop = 1:52}
+      if(i >  1) jjj_start = jjj[ancestral_segments[rs267607581_position-i+1,jjj+9] != 'Start']
+      if(i >  1) jjj_stop = jjj[ancestral_segments[rs267607581_position+i+1,jjj+9] != 'Stop']
+      
+      #start rule
+      if(length(jjj_start)>0) {start_temp = chr1[[m]][rs267607581_position-i,jjj_start+9]
+      start_temp_table = table(c(t(start_temp)))
+      start_temp_table_majority_consensus = as.numeric(names(start_temp_table)[start_temp_table == max(start_temp_table)])} else 
+        {start_temp_table_majority_consensus = 'Done'}
+      
+      #
+      if(length(start_temp_table_majority_consensus)!=1) start_temp_table_majority_consensus = 'Done' #no samples left or an equality.
+      if(length(jjj_start) <2) start_temp_table_majority_consensus = 'Done' #less than 3 samples left.
+      
+    
+      #stop rule
+      if(length(jjj_stop)>0) {stop_temp = chr1[[m]][rs267607581_position+i,jjj_stop+9]
+      stop_temp_table = table(c(t(stop_temp)))
+      stop_temp_table_majority_consensus = as.numeric(names(stop_temp_table)[stop_temp_table == max(stop_temp_table)])} else 
+        {stop_temp_table_majority_consensus = 'Done'}
+      
+      if(length(stop_temp_table_majority_consensus)!=1) stop_temp_table_majority_consensus = 'Done' #no samples left or an equality.
+      if(length(jjj_stop) <2) stop_temp_table_majority_consensus = 'Done' #less than 3 samples left.
+      
+      for(j in jjj){
+              #define the beginning of the start
+              if(start_temp_table_majority_consensus == 'Done') ancestral_segments[1:(rs267607581_position-i),j+9] = 'Start' else
+              if(chr1[[m]][rs267607581_position-i,j+9] != start_temp_table_majority_consensus[1]) ancestral_segments[1:(rs267607581_position-i),j+9] = 'Start'
+              
+              #define the beginning of the end
+              if(stop_temp_table_majority_consensus == 'Done') ancestral_segments[(rs267607581_position+i):nrow(ancestral_segments),j+9] = 'Stop' else
+              if(chr1[[m]][rs267607581_position+i,j+9] != stop_temp_table_majority_consensus[1]) ancestral_segments[(rs267607581_position+i):nrow(ancestral_segments),j+9] = 'Stop' 
+      }
+      if(i %% 1000 == 0) print(paste0('Done ', i, ', The time is: ', Sys.time()))
+    }
+  
+    #segment lengths
+    segments = as.data.frame(matrix(0, nrow = 52,ncol = 2))
+    rownames(segments) = colnames(chr1[[m]])[-c(1:9)]
+    
+    #
+    for(j in 1:52){
+      temp_start = tail(ancestral_segments[ancestral_segments[,j+9] == 'Start',2],1)
+      temp_stop = head(ancestral_segments[ancestral_segments[,j+9] == 'Stop',2],1)
+      if(length(temp_start) != 0) segments[j,1] = temp_start
+      if(length(temp_stop) != 0)  segments[j,2] = temp_stop
+      }
+
+    #results here
+    segments$V1[segments[,1] == '0'] = head(ancestral_segments$POS,1)
+    segments$V2[segments[,2] == '0'] = tail(ancestral_segments$POS,1)
+    segments$sampleID = rownames(segments) 
+    #segments = segments[-s,]
+
+    ages[[m]] = mutation_age_estimation(segments,chance.sharing.correction = FALSE, patient = 'full estimate', focus = 156.107442, map_file = file.path(params$datapath,'genetic_map_chr1_b36.txt'))
+   
+    #plotting
+    segments_to_plot = segments[51:1,]
+    segments_to_plot$type = 'Region of continuous\nhaplotype sharing' 
+    segments_to_plot$ymin = seq(0.1,50.1,by =1)
+    segments_to_plot$ymax = seq(0.85,51,by =1)
+
+    #background chromosomal segments
+    segments_bg = segments[51:1,]
+    segments_bg$type = 'Background' 
+#    if(m == 1) {segments_bg$V1 = 145; segments_bg$V2 = 165}
+#    if(m == 2) {segments_bg$V1 = 50; segments_bg$V2 = 200}
+    segments_bg$V1 = 50; segments_bg$V2 = 200
+    segments_bg$ymin = seq(0.75,51,by =0.5)[c(TRUE,FALSE)]
+    segments_bg$ymax = seq(0.25,51,by =0.5)[c(TRUE,FALSE)]
+
+    #
+    segments_to_plot = rbind(segments_bg,segments_to_plot)
+    if(m == 2) segments_to_plot = rbind(segments_to_plot,list(156.0,156.190,'LMNA','LMNA',0.15,50.85))
+    #if(m == 1) segments_to_plot = rbind(segments_to_plot,list(156.1070,156.1075,'LMNA','LMNA',0.15,50.85))
+    segments_to_plot$type = factor(segments_to_plot$type, levels = c('Background','Region of continuous\nhaplotype sharing', 'LMNA'))
+
+    segments_to_plot_all[[m]] = segments_to_plot
+  
+    #
+   # if(m == 2) xbreaks=c(50,75,100,125,150,175,200)
+      xbreaks=c(50,75,100,125,150,175,200)
+   # if(m == 1) xbreaks=c(140,145,150,155,160,165)
+    
+      gtitle = c("LMNA wildtype (ancestral haplotypes)\nAge estimate = ","LMNA rs267607581 mutation (ancestral haplotypes)\nAge estimate = ")
+      gcolor = c(rep("black",102),'purple')
+      if(m==1) gcolor = gcolor[1:102]
+      
+    ancestral_plots[[m]] = ggplot(segments_to_plot_all[[m]]) + 
+      geom_rect(aes(xmin = V1, xmax = V2, ymin = ymin, ymax = ymax,fill = type), alpha = c(rep(0.5,51),rep(1,c(51,52)[m])), color = gcolor) +
+      xlab('Chromosome 1 (Mb)') +
+      ylab('Patients') +
+      scale_fill_discrete('Chromosomal segments',type = brewer.pal(10,'Paired')[c(2,8,10)]) +
+      scale_x_continuous(breaks=xbreaks,limits = c(min(segments_to_plot_all[[m]]$V1),max(segments_to_plot_all[[m]]$V2)), expand = C(0.01,0.01)) + 
+      scale_y_continuous(breaks=c(0:50)+0.475,labels = segments_to_plot_all[[m]]$sampleID[1:51], limits = c(0,51),expand = c(0.01,0.01)) + 
+      theme_classic() +
+      theme(legend.position = c('none','right')[m]) +
+      ggtitle(paste0(gtitle[m],
+                     round(ages[[m]][2,3],2),
+                     " (CI: ", 
+                     round(ages[[m]][2,4],1),
+                     "-",
+                     round(ages[[m]][2,5],1),
+                     ") generations, ",
+                     round(ages[[m]][2,3],1)*25,
+                     " Years (CI: ",
+                     round(ages[[m]][2,4],1)*25,
+                     "-",
+                     round(ages[[m]][2,5],1)*25,
+                     ")"))
+
+    print(paste0('Done ',m, ', The time is:', Sys.time()))
+}
+
+pdf(file.path(params$resultspath,paste0('May2025/Figure8_age.pdf')),width = 12,height = 16)
+(ancestral_plots[[2]]/ancestral_plots[[1]]) +  plot_layout(guides = 'collect') + plot_annotation(tag_levels = 'A') 
+dev.off()
+
+```
+
+
+
+# session info 
+```{r session, message= T}
+sessionInfo()
+```
+
