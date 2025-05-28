@@ -62,12 +62,6 @@ for(n in 1:nrow(colnames_family)){
 colnames_family = colnames_family[order(colnames_family$family_anonyme),]
 
 #re-order genotyping data
-#for(m in 1:3){
-#  chr1[[m]][,10:61] = chr1[[m]][,order(colnames_family$family_anonyme)+9]
-#  colnames(chr1[[m]])[10:61] = colnames(chr1[[m]])[order(colnames_family$family_anonyme)+9]
-#}
-
-#re-order genotyping data
 for(m in 1:3){
  #increasing order of id
  chr1[[m]][,10:61] = chr1[[m]][,order(colnames(chr1[[m]])[10:61])+9]
@@ -130,7 +124,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
       if(i %% 1000 == 0) print(paste0('Done ', i, ', The time is: ', Sys.time()))
     }
   
-    #segment lengths
+    #Summarise the segment lengths in a dataframe
     segments = as.data.frame(matrix(0, nrow = 52,ncol = 2))
     rownames(segments) = colnames(chr1[[m]])[-c(1:9)]
     
@@ -150,7 +144,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
 
     ages[[m]] = mutation_age_estimation(segments,chance.sharing.correction = FALSE, patient = 'full estimate', focus = 156.107442, map_file = file.path(params$datapath,'genetic_map_chr1_b36.txt'))
    
-    #plotting
+    #Plot the results
     segments_to_plot = segments[51:1,]
     segments_to_plot$type = 'Region of continuous\nhaplotype sharing' 
     segments_to_plot$ymin = seq(0.1,50.1,by =1)
@@ -173,10 +167,10 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
 
     segments_to_plot_all[[m]] = segments_to_plot
   
-    #
-   # if(m == 2) xbreaks=c(50,75,100,125,150,175,200)
-      xbreaks=c(50,75,100,125,150,175,200)
-   # if(m == 1) xbreaks=c(140,145,150,155,160,165)
+    #breaks for the X-axis.
+    xbreaks=c(50,75,100,125,150,175,200)
+    #if(m == 2) xbreaks=c(50,75,100,125,150,175,200)
+    #if(m == 1) xbreaks=c(140,145,150,155,160,165)
     
       gtitle = c("LMNA wildtype (ancestral haplotypes)\nAge estimate = ","LMNA rs267607581 mutation (ancestral haplotypes)\nAge estimate = ")
       gcolor = c(rep("black",102),'purple')

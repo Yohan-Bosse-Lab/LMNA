@@ -130,14 +130,11 @@ results_subset = results[results$pvalue<0.1,]
   
 ```{r association, message= T}
 # load plink2 results
-
 results_gwas_plink = read.csv(file.path(params$datapath,'LMNA_52_phased/gwas_results.severity_recoded.glm.logistic.hybrid'),sep = '\t', comment.char = '', header = T)
 results_gwas_plink = results_plink[!is.na(results_plink$P), ]
 colnames(results_gwas_plink)[c(3,16,1,2)] = colnames(results)[1:4]
 results_plink = results_gwas_plink[results_gwas_plink$TEST == 'ADD', ]
 results_subset_plink = results_plink[results_plink$pvalue < 0.1, ]
- 
-#results_merged = merge(results,results_plink, by.x = 'SNP', by.y = 'ID')
 
 ```
 
@@ -173,10 +170,11 @@ axisdf = results_subset_forggplot %>%
   
 ###prepare significant SNPs
 signif = results_subset_forggplot[results_subset_forggplot$pvalue < 0.002,]
-#signif$genes = 'names'
-#signif$genes = c('MYLK4','HLA intergenic','')
 print(signif)
 
+
+#signif$genes = 'names'
+#signif$genes = c('MYLK4','HLA intergenic','')
 #                  SNP       pvalue chr      pos adjusted_p        tot      BPcum          genes
 #15328 GSA-rs115822788 0.0001242059   6  2698238   0.540558 1061052130 1063750368          MYLK4
 #16090       rs9260918 0.0001242059   6 29948751   0.540558 1061052130 1091000881 HLA intergenic
@@ -197,7 +195,7 @@ manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pval
     ylab(bquote(italic(p)~'- value')) +
   
     #Labels
-   # geom_label_repel(data = signif, aes(label = genes, x = BPcum, y = -log10(pvalue)), col = col[6],  size = 2) +
+    #geom_label_repel(data = signif, aes(label = genes, x = BPcum, y = -log10(pvalue)), col = col[6],  size = 2) +
   
     #Custom the theme:
     theme_bw() +

@@ -179,7 +179,6 @@ for(n in 1:nrow(colnames_family)){
 
 #
 colnames_family = colnames_family[order(colnames_family$family_anonyme),]
-write.table(colnames_family,file.path(params$datapath,'clinical/severe.txt'),row.names = F, quote = T,sep = '\t')
 
 #re-order genotyping data
 for(m in 1:3){
@@ -217,12 +216,8 @@ n_samples = 52
   chr_medium = chr1[[i]][,1:(9+n_samples)] %>% filter(POS >(156107442-20000000)) %>% filter(POS <(156107442+5000000)) %>% as.data.frame() %>% tidyr::pivot_longer(cols = 10:(9+n_samples), names_to = 'sampleID')
   chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:n_samples]) 
   
-  #chr_medium = merge(chr_medium, colnames_family,by.x = 'sampleID',by.y = 'dossier')
   chr_medium = inner_join(chr_medium, colnames_family,by = 'sampleID')
   chr_medium$value = as.character(chr_medium$value)
-  #chr_medium$sampleID = sapply(strsplit(x = chr_medium$sample, split = '_'),'[',1)
- #chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:52])
- # chr_medium$sampleID = factor(chr_medium$sampleID, levels = chr_medium$sampleID[1:n_samples]) 
   chr_medium$POS = chr_medium$POS/1000000
   if(i < 3) {chr_medium$value[chr_medium$value == '1'] = 'mutated';chr_medium$value[chr_medium$value == '0'] = 'reference'}
   if(i == 3) {chr_medium$value[chr_medium$value == '0|1'] = 'heterozygous';
@@ -236,17 +231,14 @@ galign[[i]] =
   ggplot(chr_medium,aes(x = POS,y = sampleID,col = value,fill = value)) +
   geom_tile(size = 0.4) + 
   geom_vline(xintercept = 156.107442,color = 'black',linewidth = 1) +
-  #facet_grid(rows = vars(sampleID)) +
   facet_grid(family_anonyme ~ .,scales = "free", space = "free") +
-#  labs(y = NULL) + 
- # guides(y = "none",col = 'none',size = 'none') +
+
   scale_fill_discrete('Genotype',type = legend_colors[[i]]) +
   scale_color_discrete('Genotype',type = legend_colors[[i]]) +
   scale_y_discrete(limits=rev) +
   scale_x_continuous(breaks=c(140,142.5,145,147.5,150,152.5,155,156.1,157.5,160)) +
   xlab('Chromosome 1 position (Mb)') +
   theme(panel.background = element_rect(fill = 'white'),strip.text.y.right = element_text(angle = 0,size = 8)) +
- # theme(strip.text.y.left = element_text(angle = 0,size = 5),panel.spacing.y = unit(0.1, "lines")) +
   ggtitle(c('phased chromosome 1 (haplotype 1, wiltype LMNA) ~ 25MB window','phased chromosome 1 (haplotype 2, mutated LMNA~rs267607581) ~ 25MB window','Diploid chromosome 1 ~ 25MB window')[i])
 
 }

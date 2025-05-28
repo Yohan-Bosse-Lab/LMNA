@@ -16,36 +16,25 @@ cd data/LMNA_148_samples
 #make a .vcf file
 /home/renseb01/plink2 --bfile YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples --recode vcf --out YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples
 
-#remove duplicates, keep only chromosome1, and filter unusable regions.
 #filter MAF <0.05
 vcftools --vcf YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples.vcf --maf 0.05 --out YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples_MAF005 --recode
 
-head -33 YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples_MAF005.recode.vcf >header
-
+#remove duplicates and filter unusable regions.
 awk '!($1 == 1 && $2 < 2160299)' YB-P01_LORD_only_Plus_Steinberg_LMNA_148_samples_MAF005.recode.vcf >temp.vcf
-awk '$1 != "X"' temp.vcf >temp.vcf2
-awk '$1 != "XY"' temp.vcf2 >temp.vcf3
-awk '$1 != "Y"' temp.vcf3 >temp.vcf4
-awk '$1 != "MT"' temp.vcf4 >temp.vcf5
-awk '!seen[$1, $2]++' temp.vcf5 >temp.vcf6
-awk '$4 != "D"' temp.vcf6 >temp.vcf7
-awk '$4 != "I"' temp.vcf7 >temp.vcf8
-awk '$4 != "N"' temp.vcf8 >temp.vcf9
-grep -iv 'ilmnseq' temp.vcf9 >temp.vcf10
-grep -iv 'Dup' temp.vcf10 >temp.vcf11
-cat temp.vcf11 >>header
-mv header filtered.vcf
+awk '$1 != "0" && $1 != "X" && $1 != "XY" && $1 != "Y" && $1 != "MT" && $4 != "D" && $4 != "I" && $4 != "N"' temp.vcf >temp.vcf2
+awk '!seen[$1, $2]++' temp.vcf2 | grep -iv 'ilmnseq' |  grep -iv 'Dup' >filtered.vcf
 
 #phasing
 beagle gt=filtered.vcf out=chr_phased
 
-#reformat for chr1
-zcat chr_phased.vcf.gz | head -9 >chr1_phased.vcf
-zcat chr_phased.vcf.gz | awk '$1 == "1"' >>chr1_phased.vcf
+#Keep only chr1
+gzip -d chr_phased.vcf
+head -9 chr_phased.vcf >chr1_phased.vcf
+awk '$1 == "1"' chr_phased.vcf >>chr1_phased.vcf
 gzip chr1_phased.vcf
 
 #cleanup
 rm temp*
-rm header
+
 
 #THE REST is DONE via an Rscript locally

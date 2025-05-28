@@ -10,10 +10,10 @@ cd data
 #Sort the output from above based on the alphabetic sample IDs.
 (head -n 1 LMNA_52_phased/pca_loadings.eigenvec && tail -n +2 LMNA_52_phased/pca_loadings.eigenvec | sort -k1,1) >LMNA_52_phased/covariate.tsv
 
-#add it to the covariates.
+#add it to the covariates (severe.txt in prepared in GWAS.Rmd).
 paste covariate.tsv severe.tsv >.LMNA_52_phased/phenotype.txt
 
-#Do the glm in plink (no covariates)
+#NO COVARIATES Do the glm in plink
 #/home/renseb01/plink2 \
 #  --vcf ../LMNA_52_phased/chr_52.vcf \
 #  --pheno ../LMNA_52_phased/severe.tsv \
