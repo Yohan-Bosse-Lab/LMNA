@@ -259,7 +259,9 @@ dev.off()
 
 ```{r genetic distance}
 # Read VCF and change the sample names
-vcf <- read.vcfR(file.path(params$datapath,"LMNA_52_phased/chr1_h12.vcf"))
+vcf <- read.vcfR(file.path(params$datapath,"LMNA_148_samples/chr_phased.vcf"))
+temp = vcf@gt[vcf@fix[,3] == 'rs267607581',]
+vcf@gt = vcf@gt[,temp != '0|0']
 
 #order things numerically with dossier ID 
 vcf@gt = vcf@gt[,c(1,order(as.numeric(colnames(vcf@gt)[-1]))+1)]
@@ -285,11 +287,10 @@ plot_heatmap = Heatmap(d_mat,
         row_names_gp = gpar(fontsize = 8),
         column_names_gp = gpar(fontsize = 8),
         column_names_rot = 45,
-        column_title = "Genetic distance (Nei's) heatmap, Chromosome 1",
+        column_title = "",
         heatmap_legend_param = list(title = "Genetic Distance"))
 
-
-
+#
 pdf(file.path(params$resultspath,'May2025/Figure1_heatmap.pdf'),width = 14,height = 8)
 plot_heatmap
 dev.off()

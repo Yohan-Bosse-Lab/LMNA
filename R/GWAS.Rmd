@@ -21,7 +21,6 @@ library(ggplot2)
 library(dplyr)
 library(patchwork)
 library(RColorBrewer)
-library(qqman)
 library(ggrepel)
 ```
 
@@ -69,8 +68,6 @@ colnames_family$sex_recoded[colnames_family$sex == 'Male'] = 2
 
 colnames(colnames_family)[1] = '#IID' 
 
-
-
 #save for plink2 --glm
 write.table(colnames_family[,c(1,6,7)],file.path(params$datapath,'clinical/severe.tsv'),quote= F, sep = '\t',row.names = F)
 
@@ -78,64 +75,15 @@ colnames(colnames_family)[1] = 'id'
 ```
 
 
-
-
-# association info 
-```{r association, message= T}
-# Load phenotype data
-colnames_family = colnames_family[order(colnames_family$id),]
-severity = as.factor(colnames_family$severity)
-family = as.factor(colnames_family$family)
-
-
-#Genotype data
-geno = chr[,10:61]
-geno = geno[,order(colnames(geno))]
-
-
-#
-results = data.frame(matrix(0,nrow = nrow(chr),ncol =4))
-colnames(results) = c('SNP','pvalue','chr','pos')
-results$SNP = chr$ID
-results$chr = chr$`#CHROM`
-results$pos = chr$POS
-
-
-#SNPs re-coded as 0/1/2
-for (i in 1:nrow(results)) {  
-  snp = geno[i,]
-  snp = gsub('1|0','1',snp,fixed = T)  
-  snp = gsub('0|1','1',snp,fixed = T)  
-  snp = gsub('0|0','0',snp,fixed = T)  
-  snp = gsub('1|1','2',snp,fixed = T)  
-  snp = as.numeric(snp)
-  
-  model = suppressWarnings(glm(severity ~ snp, family = binomial))
-  
-  if(nrow(summary(model)$coefficients)>1) {results$pvalue[i] = summary(model)$coefficients[2, 4]} else 
-    results$pvalue[i] = 1
-  
-  if(i %% 10000 == 0) print(paste0('Done ',i, ' of ',nrow(results),', Time is: ',Sys.time()))
-}
-
-#filter results and pvalue adjust.
-results = results[results$pvalue<0.9999,]
-results$adjusted_p <- p.adjust(results$pvalue, method = "fdr")
-results_subset = results[results$pvalue<0.1,]
-```
-
-
 # Double check the glm versus plink2 results
   * R glm and plink glm are the same, except if you apply the (default) Firth's bias reduction method for glm that don't converge (~ 1 % of samples)
-  
 ```{r association, message= T}
 # load plink2 results
 results_gwas_plink = read.csv(file.path(params$datapath,'LMNA_52_phased/gwas_results.severity_recoded.glm.logistic.hybrid'),sep = '\t', comment.char = '', header = T)
-results_gwas_plink = results_plink[!is.na(results_plink$P), ]
-colnames(results_gwas_plink)[c(3,16,1,2)] = colnames(results)[1:4]
-results_plink = results_gwas_plink[results_gwas_plink$TEST == 'ADD', ]
-results_subset_plink = results_plink[results_plink$pvalue < 0.1, ]
-
+results_gwas_plink = results_gwas_plink[!is.na(results_gwas_plink$P),]
+colnames(results_gwas_plink)[c(3,16,1,2)] = c("SNP","pvalue","chr","pos")
+results_plink = results_gwas_plink[results_gwas_plink$TEST == 'ADD',]
+results_subset_plink = results_plink[results_plink$pvalue < 0.1,]
 ```
 
 # Plot
@@ -170,17 +118,11 @@ axisdf = results_subset_forggplot %>%
   
 ###prepare significant SNPs
 signif = results_subset_forggplot[results_subset_forggplot$pvalue < 0.002,]
+signif = results_subset_forggplot[results_subset_forggplot$SNP == 'rs2234962',]
+signif$genes = 'BAG3'
 print(signif)
 
 
-#signif$genes = 'names'
-#signif$genes = c('MYLK4','HLA intergenic','')
-#                  SNP       pvalue chr      pos adjusted_p        tot      BPcum          genes
-#15328 GSA-rs115822788 0.0001242059   6  2698238   0.540558 1061052130 1063750368          MYLK4
-#16090       rs9260918 0.0001242059   6 29948751   0.540558 1061052130 1091000881 HLA intergenic
-#16092       rs1051133 0.0001242059   6 30037908   0.540558 1061052130 1091090038      
-#
-  
 ###Make the ggplot:
 manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pvalue))) +
     
@@ -195,7 +137,7 @@ manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pval
     ylab(bquote(italic(p)~'- value')) +
   
     #Labels
-    #geom_label_repel(data = signif, aes(label = genes, x = BPcum, y = -log10(pvalue)), col = col[6],  size = 2) +
+    geom_label_repel(data = signif, aes(label = genes, x = BPcum, y = -log10(pvalue)), col = col[signif$chr],  size = 4,box.padding = -0.5) +
   
     #Custom the theme:
     theme_bw() +
@@ -209,11 +151,82 @@ manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pval
     ggtitle('Manhattan plot: SNP genotypes vs. severity phenotype (glm for severity with Sex, PC1, PC2 as covariates)')
 
 #save plot
-pdf(file.path(params$resultspath,paste0('May2025/Figure9_Manhattan_version2.pdf')),width = 10,height = 5)
-manhattan_plot
+#pdf(file.path(params$resultspath,paste0('May2025/Figure9_Manhattan_version2.pdf')),width = 10,height = 5)
+#manhattan_plot
+#dev.off()
+```
+
+# BAG3 
+```{r BAG3, message= T}
+clinical$BAG3 = clinical$BAG3_p.C151R..rs2234962.
+clinical$BAG3[clinical$BAG3 =='AB (heterozygous)'] = 'AG (heterozygous) &\nGG (homozygous)'
+clinical$BAG3[clinical$BAG3 =='BB (homozygous)'] =  'AG (heterozygous) &\nGG (homozygous)'
+
+###
+bag3 = as.data.frame(table(clinical$BAG3,clinical$severity))
+bag3 = bag3[bag3$Var2!= '',]
+bag3 = bag3[bag3$Var1!= '',]
+#bag3$Var2 = relevel(bag3$Var2, ref = 'Yes')
+bag3$`severe\nphenotype` =bag3$Var2
+
+
+###
+bag3$xlab = c(1,2,1,2) 
+bag3$ylab = c(1.02,1.02,5/34+0.03,5/15+0.03)
+bag3$labels = c('29','10','5','5')
+
+
+###barplot
+bag3_ggplot =
+  ggplot(bag3) + 
+    geom_bar(aes(fill=`severe\nphenotype`, y=Freq, x=Var1),position="fill", stat="identity") +
+    geom_text(aes(label = labels, x = xlab, y = ylab)) +
+    scale_fill_brewer(palette="Paired") +
+    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 2.82, p-value = 0.25)') +
+    ylab('Frequency') +
+    xlab('') +
+    theme_bw()
+
+#save plot
+pdf(file.path(params$resultspath,paste0('May2025/Figure10_bag3.pdf')),width = 5,height = 5)
+bag3_ggplot
 dev.off()
 ```
 
+# BAG33 genotypes
+```{r BAG3, message= T}
+clinical$BAG3 = clinical$BAG3_p.C151R..rs2234962.
+
+###
+bag3 = as.data.frame(table(clinical$BAG3,clinical$severity))
+bag3 = bag3[bag3$Var2!= '',]
+bag3 = bag3[bag3$Var1!= '',]
+#bag3$Var2 = relevel(bag3$Var2, ref = 'Yes')
+bag3$`severe\nphenotype` =bag3$Var2
+
+
+###
+bag3$xlab = c(1,2,3,1,2,3) 
+bag3$ylab = c(1.02,1.02,1.02,5/34+0.03,4/12+0.03,1/3+0.03)
+bag3$labels = c(29,8,4,5,4,1)
+
+
+###barplot
+bag3_ggplot =
+  ggplot(bag3) + 
+    geom_bar(aes(fill=`severe\nphenotype`, y=Freq, x=Var1),position="fill", stat="identity") +
+    geom_text(aes(label = labels, x = xlab, y = ylab)) +
+    scale_fill_brewer(palette="Paired") +
+    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 2.82, p-value = 0.24)') +
+    ylab('Frequency') +
+    xlab('') +
+    theme_bw()
+
+#save plot
+pdf(file.path(params$resultspath,paste0('May2025/Figure10_bag3_v2.pdf')),width = 5,height = 5)
+bag3_ggplot
+dev.off()
+```
 
 
 # session info 

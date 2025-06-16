@@ -1,5 +1,5 @@
 ---
-title: "LMNA ancestral blokcks _ Mutation Age"
+title: "LMNA ancestral blocks _ Mutation Age"
 author: "Sébastien Renaut (sebastien.renaut@criucpq.ulaval.ca)"
 date: "`r Sys.Date()`"
 output:
@@ -73,21 +73,22 @@ for(m in 1:3){
 }
 ```
 
-# find ancestral block 
+# find ancestral blocks 
 ```{r ancestral, message= T}
 ancestral_plots = list()
 segments_to_plot_all = list()
 ages = list()
+
 #m=2
 for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
-    #to it for 'all' reference haplotypes (i.e. pretend we do not know which one is the true ancestral haplotype)
+    #Do it for 'all' reference haplotypes (i.e. pretend we do not know which one is the true ancestral haplotype)
     rs267607581_position = c(1:nrow(chr1[[m]]))[chr1[[m]]$POS==156107442]
     ancestral_segments = chr1[[m]]
     ancestral_segments$POS = ancestral_segments$POS/1000000
   
     #find the start and stop
     for(i in 1:10000){
-      #define where to look for the haplotype
+      #As you proceed up/down the chromosome, the number of samples (jjj) which forms the ancestral block diminishes ('Done' status). How fast it diminishes determines the mutational age.
       if(i == 1) {jjj = 1:52; jjj_start = 1:52;jjj_stop = 1:52}
       if(i >  1) jjj_start = jjj[ancestral_segments[rs267607581_position-i+1,jjj+9] != 'Start']
       if(i >  1) jjj_stop = jjj[ancestral_segments[rs267607581_position+i+1,jjj+9] != 'Stop']
@@ -124,7 +125,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
       if(i %% 1000 == 0) print(paste0('Done ', i, ', The time is: ', Sys.time()))
     }
   
-    #Summarise the segment lengths in a dataframe
+    #Summarise the ancestral segment lengths in a dat.frame
     segments = as.data.frame(matrix(0, nrow = 52,ncol = 2))
     rownames(segments) = colnames(chr1[[m]])[-c(1:9)]
     
@@ -142,6 +143,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
     segments$sampleID = rownames(segments) 
     #segments = segments[-s,]
 
+    #The function that calculate an age.
     ages[[m]] = mutation_age_estimation(segments,chance.sharing.correction = FALSE, patient = 'full estimate', focus = 156.107442, map_file = file.path(params$datapath,'genetic_map_chr1_b36.txt'))
    
     #Plot the results
@@ -150,7 +152,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
     segments_to_plot$ymin = seq(0.1,50.1,by =1)
     segments_to_plot$ymax = seq(0.85,51,by =1)
 
-    #background chromosomal segments
+    #Background chromosomal segments
     segments_bg = segments[51:1,]
     segments_bg$type = 'Background' 
 #    if(m == 1) {segments_bg$V1 = 145; segments_bg$V2 = 165}
