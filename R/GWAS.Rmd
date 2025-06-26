@@ -25,7 +25,7 @@ library(ggrepel)
 ```
 
 
-```{r split a vcf into the referwence and mutated alleles,eval = Ts}
+```{r generate a file with the sample ID with severity phenotype, along with sex covariate,eval = T}
 #
 chr = read.table(file.path(params$datapath,'LMNA_148_samples/chr_phased.vcf'),header  = T,sep = '\t',check.names =F,comment.char = "",skip =8)
 colnames(chr)[10:ncol(chr)] = sapply(strsplit(sapply(strsplit(colnames(chr)[10:ncol(chr)],'#'),'[',2),'_'),'[',1) #simplify column names
@@ -36,12 +36,11 @@ chr = chr[,temp!= '0|0']
 
 
 #clinical data
-clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-06-25_1356.csv'),header = T)
+
 colnames(clinical)[2] = 'id'
 colnames(clinical)[colnames(clinical) == 'Severe.cardiac.phenotype..defined.as..ESHF..cardiac.mortality..ventricular.arrhythmia..severe.CMP.'] = 'severity'
 
-
-#clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_2025-04-04_0935.csv'),header = T)
 family = read.csv(file.path(params$datapath,'clinical/familles.csv'),header = T,sep = '\t') 
 
 
@@ -151,9 +150,9 @@ manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pval
     ggtitle('Manhattan plot: SNP genotypes vs. severity phenotype (glm for severity with Sex, PC1, PC2 as covariates)')
 
 #save plot
-#pdf(file.path(params$resultspath,paste0('May2025/Figure9_Manhattan_version2.pdf')),width = 10,height = 5)
-#manhattan_plot
-#dev.off()
+pdf(file.path(params$resultspath,paste0('June2025/Figure7_Manhattan_version2.pdf')),width = 10,height = 5)
+manhattan_plot
+dev.off()
 ```
 
 # BAG3 
@@ -161,6 +160,9 @@ manhattan_plot = ggplot(results_subset_forggplot, aes(x = BPcum, y = -log10(pval
 clinical$BAG3 = clinical$BAG3_p.C151R..rs2234962.
 clinical$BAG3[clinical$BAG3 =='AB (heterozygous)'] = 'AG (heterozygous) &\nGG (homozygous)'
 clinical$BAG3[clinical$BAG3 =='BB (homozygous)'] =  'AG (heterozygous) &\nGG (homozygous)'
+clinical$severity[clinical$severity =='Yes'] = 'Present'
+clinical$severity[clinical$severity =='No'] = 'Absent'
+
 
 ###
 bag3 = as.data.frame(table(clinical$BAG3,clinical$severity))
@@ -170,25 +172,30 @@ bag3 = bag3[bag3$Var1!= '',]
 bag3$`severe\nphenotype` =bag3$Var2
 
 
+#Statistical test
+fisher.test(table(clinical$BAG3,clinical$severity)[2:3,2:3])
+
+
 ###
 bag3$xlab = c(1,2,1,2) 
-bag3$ylab = c(1.02,1.02,5/34+0.03,5/15+0.03)
-bag3$labels = c('29','10','5','5')
+bag3$ylab = c(1.02,1.02,
+              bag3$Freq[3]/(bag3$Freq[3]+bag3$Freq[1])+0.03,
+              bag3$Freq[4]/(bag3$Freq[2]+bag3$Freq[4])+0.03)
 
 
 ###barplot
 bag3_ggplot =
   ggplot(bag3) + 
     geom_bar(aes(fill=`severe\nphenotype`, y=Freq, x=Var1),position="fill", stat="identity") +
-    geom_text(aes(label = labels, x = xlab, y = ylab)) +
+    geom_text(aes(label = Freq, x = xlab, y = ylab)) +
     scale_fill_brewer(palette="Paired") +
-    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 2.82, p-value = 0.25)') +
+    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 3.6, p-value = 0.07)') +
     ylab('Frequency') +
     xlab('') +
     theme_bw()
 
 #save plot
-pdf(file.path(params$resultspath,paste0('May2025/Figure10_bag3.pdf')),width = 5,height = 5)
+pdf(file.path(params$resultspath,paste0('June2025/Figure8_bag3_v2.pdf')),width = 5,height = 5)
 bag3_ggplot
 dev.off()
 ```
@@ -196,6 +203,10 @@ dev.off()
 # BAG33 genotypes
 ```{r BAG3, message= T}
 clinical$BAG3 = clinical$BAG3_p.C151R..rs2234962.
+clinical$BAG3[clinical$BAG3 =='AB (heterozygous)'] = 'AG (heteroz.)'
+clinical$BAG3[clinical$BAG3 =='BB (homozygous)'] =  'GG (homozygous)'
+clinical$severity[clinical$severity =='Yes'] = 'Present'
+clinical$severity[clinical$severity =='No'] = 'Absent'
 
 ###
 bag3 = as.data.frame(table(clinical$BAG3,clinical$severity))
@@ -204,26 +215,28 @@ bag3 = bag3[bag3$Var1!= '',]
 #bag3$Var2 = relevel(bag3$Var2, ref = 'Yes')
 bag3$`severe\nphenotype` =bag3$Var2
 
-
 ###
 bag3$xlab = c(1,2,3,1,2,3) 
-bag3$ylab = c(1.02,1.02,1.02,5/34+0.03,4/12+0.03,1/3+0.03)
-bag3$labels = c(29,8,4,5,4,1)
+bag3$ylab = c(1.02,1.02,1.02,
+              bag3$Freq[4]/(bag3$Freq[4]+bag3$Freq[1])+0.03,
+              bag3$Freq[5]/(bag3$Freq[5]+bag3$Freq[2])+0.03,
+              bag3$Freq[6]/(bag3$Freq[6]+bag3$Freq[3])+0.03)
+
 
 
 ###barplot
 bag3_ggplot =
   ggplot(bag3) + 
     geom_bar(aes(fill=`severe\nphenotype`, y=Freq, x=Var1),position="fill", stat="identity") +
-    geom_text(aes(label = labels, x = xlab, y = ylab)) +
+    geom_text(aes(label = Freq, x = xlab, y = ylab)) +
     scale_fill_brewer(palette="Paired") +
-    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 2.82, p-value = 0.24)') +
+    ggtitle('BAG3 genotypes ~ severity\n(Odds-ratio of G allele = 3.74, p-value = 0.10)') +
     ylab('Frequency') +
     xlab('') +
     theme_bw()
 
 #save plot
-pdf(file.path(params$resultspath,paste0('May2025/Figure10_bag3_v2.pdf')),width = 5,height = 5)
+pdf(file.path(params$resultspath,paste0('June2025/Figure8_bag3.pdf')),width = 5,height = 5)
 bag3_ggplot
 dev.off()
 ```

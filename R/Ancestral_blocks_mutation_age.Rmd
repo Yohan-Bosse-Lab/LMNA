@@ -174,7 +174,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
     #if(m == 2) xbreaks=c(50,75,100,125,150,175,200)
     #if(m == 1) xbreaks=c(140,145,150,155,160,165)
     
-      gtitle = c("LMNA wildtype (ancestral haplotypes)\nAge estimate = ","LMNA rs267607581 mutation (ancestral haplotypes)\nAge estimate = ")
+      gtitle = c("LMNA rs267607581 wildtype allele (ancestral haplotypes)\nAge estimate = ","LMNA rs267607581 mutated allele (ancestral haplotypes)\nAge estimate = ")
       gcolor = c(rep("black",102),'purple')
       if(m==1) gcolor = gcolor[1:102]
       
@@ -183,7 +183,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
       xlab('Chromosome 1 (Mb)') +
       ylab('Patients') +
       scale_fill_discrete('Chromosomal segments',type = brewer.pal(10,'Paired')[c(2,8,10)]) +
-      scale_x_continuous(breaks=xbreaks,limits = c(min(segments_to_plot_all[[m]]$V1),max(segments_to_plot_all[[m]]$V2)), expand = C(0.01,0.01)) + 
+      scale_x_continuous(breaks=xbreaks,limits = c(min(segments_to_plot_all[[m]]$V1),max(segments_to_plot_all[[m]]$V2)), expand = c(0.01,0.01)) + 
       scale_y_continuous(breaks=c(0:50)+0.475,labels = segments_to_plot_all[[m]]$sampleID[1:51], limits = c(0,51),expand = c(0.01,0.01)) + 
       theme_classic() +
       theme(legend.position = c('none','right')[m]) +
@@ -193,23 +193,24 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
                      round(ages[[m]][2,4],1),
                      "-",
                      round(ages[[m]][2,5],1),
-                     ") generations, ",
-                     round(ages[[m]][2,3],1)*25,
-                     " Years (CI: ",
-                     round(ages[[m]][2,4],1)*25,
-                     "-",
-                     round(ages[[m]][2,5],1)*25,
-                     ")"))
+                     ") generations"))
+                    # round(ages[[m]][2,3],1)*25,
+                    # " Years (CI: ",
+                    # round(ages[[m]][2,4],1)*25,
+                    # "-",
+                    # round(ages[[m]][2,5],1)*25,
+                    # ")"))
 
     print(paste0('Done ',m, ', The time is:', Sys.time()))
 }
+```
 
-pdf(file.path(params$resultspath,paste0('May2025/Figure8_age.pdf')),width = 12,height = 16)
+```{r save plot, message= T}
+pdf(file.path(params$resultspath,paste0('June2025/Figure6_age.pdf')),width = 12,height = 16)
 (ancestral_plots[[2]]/ancestral_plots[[1]]) +  plot_layout(guides = 'collect') + plot_annotation(tag_levels = 'A') 
 dev.off()
 
 ```
-
 
 
 # session info 
