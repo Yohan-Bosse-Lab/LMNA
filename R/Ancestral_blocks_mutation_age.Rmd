@@ -32,7 +32,8 @@ chr1_h12 = read.table(file.path(params$datapath,'LMNA_52_phased/chr1_h12.vcf'),h
 chr1 = list(chr1_wildtype,chr1_mutated,chr1_h12)
 
 #clinical data
-clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+#clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-05-15_1309.csv'),header = T)
+clinical = read.csv(file.path(params$datapath,'clinical/LMNA_DATA_LABELS_2025-06-25_1356.csv'),header = T)
 colnames(clinical)[2] = 'id'
 colnames(clinical)[colnames(clinical) == 'Severe.cardiac.phenotype..defined.as..ESHF..cardiac.mortality..ventricular.arrhythmia..severe.CMP.'] = 'severity'
 
@@ -46,7 +47,7 @@ clinical_family$id = as.character(clinical_family$id)
 clinical_family = clinical_family[clinical_family$id %in% colnames(chr1[[1]])[10:61],]
 
 #create ad data.frame that will contain info on patients.
-colnames_family = merge(data.frame(id = colnames(chr1[[1]])[10:61]),clinical_family[,colnames(clinical_family) %in% c('family_number','family','id','severity')],by = 'id',all= T)
+colnames_family = merge(data.frame(id = colnames(chr1[[1]])[10:61]),clinical_family[,colnames(clinical_family) %in% c('family_number','family','id','severity','Record.ID')],by = 'id',all= T)
 
 colnames_family$family[is.na(colnames_family$family)] = 'Unknown'
 colnames_family$family[colnames_family$family =='None'] = 'Unknown'
@@ -125,7 +126,7 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
       if(i %% 1000 == 0) print(paste0('Done ', i, ', The time is: ', Sys.time()))
     }
   
-    #Summarise the ancestral segment lengths in a dat.frame
+    #Summarise the ancestral segment lengths in a data frame
     segments = as.data.frame(matrix(0, nrow = 52,ncol = 2))
     rownames(segments) = colnames(chr1[[m]])[-c(1:9)]
     
@@ -140,30 +141,33 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
     #results here
     segments$V1[segments[,1] == '0'] = head(ancestral_segments$POS,1)
     segments$V2[segments[,2] == '0'] = tail(ancestral_segments$POS,1)
-    segments$sampleID = rownames(segments) 
+    #segments$sampleID = rownames(segments)
+    segments = merge(segments,colnames_family[,c(1,2)],by.x = 0,by.y= 'id')
     #segments = segments[-s,]
 
     #The function that calculate an age.
     ages[[m]] = mutation_age_estimation(segments,chance.sharing.correction = FALSE, patient = 'full estimate', focus = 156.107442, map_file = file.path(params$datapath,'genetic_map_chr1_b36.txt'))
    
-    #Plot the results
-    segments_to_plot = segments[51:1,]
+    #Plot the results in the same order as the families
+    segments = segments[as.numeric(rownames(colnames_family)),]
+    segments_to_plot = segments[52:1,]
     segments_to_plot$type = 'Region of continuous\nhaplotype sharing' 
-    segments_to_plot$ymin = seq(0.1,50.1,by =1)
-    segments_to_plot$ymax = seq(0.85,51,by =1)
+    segments_to_plot$ymin = seq(0.1,51.1,by =1)
+    segments_to_plot$ymax = seq(0.85,52, by =1)
 
     #Background chromosomal segments
-    segments_bg = segments[51:1,]
+    segments_bg = segments[52:1,]
     segments_bg$type = 'Background' 
 #    if(m == 1) {segments_bg$V1 = 145; segments_bg$V2 = 165}
 #    if(m == 2) {segments_bg$V1 = 50; segments_bg$V2 = 200}
     segments_bg$V1 = 50; segments_bg$V2 = 200
-    segments_bg$ymin = seq(0.75,51,by =0.5)[c(TRUE,FALSE)]
-    segments_bg$ymax = seq(0.25,51,by =0.5)[c(TRUE,FALSE)]
+    segments_bg$ymin = seq(0.75,52,by =0.5)[c(TRUE,FALSE)]
+    segments_bg$ymax = seq(0.25,52,by =0.5)[c(TRUE,FALSE)]
 
     #
     segments_to_plot = rbind(segments_bg,segments_to_plot)
-    if(m == 2) segments_to_plot = rbind(segments_to_plot,list(156.0,156.190,'LMNA','LMNA',0.15,50.85))
+   # if(m == 2) 
+    segments_to_plot = rbind(segments_to_plot,list('RN',156.0,156.190,'LMNA','LMNA',0.15,50.85))
     #if(m == 1) segments_to_plot = rbind(segments_to_plot,list(156.1070,156.1075,'LMNA','LMNA',0.15,50.85))
     segments_to_plot$type = factor(segments_to_plot$type, levels = c('Background','Region of continuous\nhaplotype sharing', 'LMNA'))
 
@@ -175,18 +179,19 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
     #if(m == 1) xbreaks=c(140,145,150,155,160,165)
     
       gtitle = c("LMNA rs267607581 wildtype allele (ancestral haplotypes)\nAge estimate = ","LMNA rs267607581 mutated allele (ancestral haplotypes)\nAge estimate = ")
-      gcolor = c(rep("black",102),'purple')
-      if(m==1) gcolor = gcolor[1:102]
-      
+      gcolor = brewer.pal(10,'Paired')[c(2,8,10)]
+      segments_color = c(rep("black",104),gcolor[3])
+   #   if(m==1) segments_color = segments_color[1:104]
+
     ancestral_plots[[m]] = ggplot(segments_to_plot_all[[m]]) + 
-      geom_rect(aes(xmin = V1, xmax = V2, ymin = ymin, ymax = ymax,fill = type), alpha = c(rep(0.5,51),rep(1,c(51,52)[m])), color = gcolor) +
+      geom_rect(aes(xmin = V1, xmax = V2, ymin = ymin, ymax = ymax,fill = type), alpha = c(rep(0.5,52),rep(1,c(53,53)[m])), color = segments_color) +
       xlab('Chromosome 1 (Mb)') +
       ylab('Patients') +
-      scale_fill_discrete('Chromosomal segments',type = brewer.pal(10,'Paired')[c(2,8,10)]) +
+      scale_fill_discrete('Chromosomal segments',type = gcolor) +
       scale_x_continuous(breaks=xbreaks,limits = c(min(segments_to_plot_all[[m]]$V1),max(segments_to_plot_all[[m]]$V2)), expand = c(0.01,0.01)) + 
-      scale_y_continuous(breaks=c(0:50)+0.475,labels = segments_to_plot_all[[m]]$sampleID[1:51], limits = c(0,51),expand = c(0.01,0.01)) + 
+      scale_y_continuous(breaks=c(0:51)+0.475,labels = segments_to_plot_all[[m]]$Record.ID[1:52], limits = c(0,52),expand = c(0.01,0.01)) + 
       theme_classic() +
-      theme(legend.position = c('none','right')[m]) +
+      theme(legend.position = c('inside','none')[m],legend.position.inside = c(0.3, 0.8),axis.text.y = element_text(size=8),plot.title = element_text(size = 12)) +
       ggtitle(paste0(gtitle[m],
                      round(ages[[m]][2,3],2),
                      " (CI: ", 
@@ -200,16 +205,16 @@ for(m in 1:2){ #m is to choose the reference vs mutated haplotype.
                     # "-",
                     # round(ages[[m]][2,5],1)*25,
                     # ")"))
-
     print(paste0('Done ',m, ', The time is:', Sys.time()))
 }
+
+
 ```
 
 ```{r save plot, message= T}
-pdf(file.path(params$resultspath,paste0('June2025/Figure6_age.pdf')),width = 12,height = 16)
-(ancestral_plots[[2]]/ancestral_plots[[1]]) +  plot_layout(guides = 'collect') + plot_annotation(tag_levels = 'A') 
-dev.off()
-
+#pdf(file.path(params$resultspath,paste0('July2025/Figure6_age.pdf')),width = 12,height = 16)
+#(ancestral_plots[[2]]/ancestral_plots[[1]]) +  plot_layout(guides = 'collect') + plot_annotation(tag_levels = 'A')
+#dev.off()
 ```
 
 
